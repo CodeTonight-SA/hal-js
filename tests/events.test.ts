@@ -14,6 +14,7 @@ import {
   parseEvents,
   EVENT_TYPES,
   type HappiEvent,
+  isKnownEventType,
 } from "../src/events.js";
 import { HAPPI_VERSION } from "../src/envelope.js";
 
@@ -151,9 +152,34 @@ describe("events / decodeEvent: rejection", () => {
     expect(out).toBeNull();
   });
 
-  it("rejects unknown type", () => {
-    const out = decodeEvent({ v: HAPPI_VERSION, id: "r1", type: "unknown", ts: 0 });
-    expect(out).toBeNull();
+  it("tolerates an unknown type rather than dropping the event", () => {
+    // The spec requires it: "unknown event types/fields are ignored, never
+    // rejected". This test previously asserted the opposite. Dropping the
+    // event was the worst available behaviour, because a discarded line is
+    // indistinguishable from a line that was never sent — and it undid the
+    // forward-compatible version rule, since accepting a happi/1.9 stream is
+    // pointless if the first event type introduced in 1.9 vanishes.
+    const out = decodeEvent({
+      v: "happi/1.9", id: "r1", type: "reasoning_step", ts: 0, depth: 3,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.type).toBe("reasoning_step");
+    // Whatever it carried survives, so a caller that DOES understand the new
+    // type can still read it.
+    expect((out as unknown as Record<string, unknown>).depth).toBe(3);
+  });
+
+  it("still reports whether a decoded type is one this build knows", () => {
+    const known = decodeEvent({ v: HAPPI_VERSION, id: "r1", type: "started", ts: 0 });
+    const novel = decodeEvent({ v: HAPPI_VERSION, id: "r1", type: "reasoning_step", ts: 0 });
+    expect(isKnownEventType(known!)).toBe(true);
+    expect(isKnownEventType(novel!)).toBe(false);
+  });
+
+  it("still rejects an event with no type at all", () => {
+    // Tolerating unknown TYPES must not become tolerating malformed events.
+    expect(decodeEvent({ v: HAPPI_VERSION, id: "r1", ts: 0 })).toBeNull();
+    expect(decodeEvent({ v: HAPPI_VERSION, id: "r1", type: "", ts: 0 })).toBeNull();
   });
 
   it("rejects non-finite ts", () => {

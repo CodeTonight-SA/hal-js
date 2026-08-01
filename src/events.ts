@@ -198,8 +198,26 @@ export function decodeEvent(value: unknown): HappiEvent | null {
   if (!isAcceptedVersion(v.v)) return null;
   if (typeof v.id !== "string") return null;
   if (typeof v.ts !== "number" || !Number.isFinite(v.ts)) return null;
-  if (typeof v.type !== "string" || !EVENT_TYPE_SET.has(v.type)) return null;
+  // A `type` must be present and be a string, but it need NOT be one this
+  // build recognises. The spec requires that: "unknown event types/fields are
+  // ignored, never rejected". Dropping an unrecognised type here would also
+  // undo the forward-compatible version rule directly above — there is no
+  // value in accepting a happi/1.9 stream if the first event type introduced
+  // in 1.9 gets silently discarded, which is the worst outcome of all because
+  // a dropped line looks exactly like a line that was never sent.
+  if (typeof v.type !== "string" || v.type === "") return null;
   return v as unknown as HappiEvent;
+}
+
+/**
+ * True if this build recognises the event's type.
+ *
+ * `decodeEvent` deliberately admits types it does not know, so a consumer that
+ * needs to branch on a known shape should check this first rather than assume
+ * every decoded event is one of the documented types.
+ */
+export function isKnownEventType(event: HappiEvent): boolean {
+  return EVENT_TYPE_SET.has(event.type as string);
 }
 
 /**
