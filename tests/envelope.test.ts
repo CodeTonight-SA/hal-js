@@ -17,14 +17,14 @@ import {
 } from "../src/envelope.js";
 
 describe("envelope", () => {
-  it("HAPPI_VERSION is exactly 'happi/1.0'", () => {
-    expect(HAPPI_VERSION).toBe("happi/1.0");
+  it("HAPPI_VERSION is exactly 'happi/1.3'", () => {
+    expect(HAPPI_VERSION).toBe("happi/1.3");
   });
 
   it("encode produces compact JSON without spaces", () => {
     const env: Envelope = { v: HAPPI_VERSION, id: "r1", cmd: "version" };
     const wire = encode(env);
-    expect(wire).toBe('{"v":"happi/1.0","id":"r1","cmd":"version"}');
+    expect(wire).toBe('{"v":"happi/1.3","id":"r1","cmd":"version"}');
   });
 
   it("encode preserves args, flags, auth verbatim", () => {

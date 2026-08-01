@@ -1,5 +1,6 @@
 /**
- * Events parser tests — covers all 7 typed events and NDJSON streaming.
+ * Events parser tests — covers the 7 streaming types, the 2 v1.1 record
+ * terminators, and NDJSON streaming.
  *
  * Goodhart-resistant: assertions check actual event values yielded by the
  * iterator, not parser call counts. A mutation that swaps `started` for
@@ -13,6 +14,7 @@ import {
   parseEvents,
   EVENT_TYPES,
   type HappiEvent,
+  isKnownEventType,
 } from "../src/events.js";
 import { HAPPI_VERSION } from "../src/envelope.js";
 
@@ -32,20 +34,18 @@ async function collect(stream: ReadableStream<Uint8Array>): Promise<HappiEvent[]
   return out;
 }
 
-describe("events / decodeEvent", () => {
-  it("recognises all 7 event types", () => {
+describe("events / type registry", () => {
+  it("recognises 7 streaming types plus the 2 v1.1 terminators", () => {
+    // idr + context are non-streaming records emitted after the outcome.
     const required = [
-      "started",
-      "delta",
-      "tool_call",
-      "tool_result",
-      "sub_request",
-      "completed",
-      "error",
+      "started", "delta", "tool_call", "tool_result", "sub_request",
+      "completed", "error", "idr", "context",
     ];
     expect([...EVENT_TYPES].sort()).toEqual(required.sort());
   });
+});
 
+describe("events / decodeEvent: simple events", () => {
   it("parses started", () => {
     const out = decodeEvent({ v: HAPPI_VERSION, id: "r1", type: "started", ts: 0 });
     expect(out?.type).toBe("started");
@@ -63,7 +63,9 @@ describe("events / decodeEvent", () => {
     expect(out?.type).toBe("delta");
     if (out?.type === "delta") expect(out.text).toBe("hello");
   });
+});
 
+describe("events / decodeEvent: tool events", () => {
   it("parses tool_call", () => {
     const out = decodeEvent({
       v: HAPPI_VERSION,
@@ -93,7 +95,9 @@ describe("events / decodeEvent", () => {
     });
     expect(out?.type).toBe("tool_result");
   });
+});
 
+describe("events / decodeEvent: sub_request and completed", () => {
   it("parses sub_request with embedded envelope", () => {
     const out = decodeEvent({
       v: HAPPI_VERSION,
@@ -121,7 +125,9 @@ describe("events / decodeEvent", () => {
       expect(out.usage?.input_tokens).toBe(10);
     }
   });
+});
 
+describe("events / decodeEvent: error", () => {
   it("parses error with code+message", () => {
     const out = decodeEvent({
       v: HAPPI_VERSION,
@@ -137,15 +143,43 @@ describe("events / decodeEvent", () => {
       expect(out.message).toBe("bad json");
     }
   });
+});
 
-  it("rejects wrong version", () => {
+describe("events / decodeEvent: rejection", () => {
+  it("rejects an out-of-range version", () => {
+    // happi/0.9 sits below the accepted range, so it must still be refused.
     const out = decodeEvent({ v: "happi/0.9", id: "r1", type: "started", ts: 0 });
     expect(out).toBeNull();
   });
 
-  it("rejects unknown type", () => {
-    const out = decodeEvent({ v: HAPPI_VERSION, id: "r1", type: "unknown", ts: 0 });
-    expect(out).toBeNull();
+  it("tolerates an unknown type rather than dropping the event", () => {
+    // The spec requires it: "unknown event types/fields are ignored, never
+    // rejected". This test previously asserted the opposite. Dropping the
+    // event was the worst available behaviour, because a discarded line is
+    // indistinguishable from a line that was never sent — and it undid the
+    // forward-compatible version rule, since accepting a happi/1.9 stream is
+    // pointless if the first event type introduced in 1.9 vanishes.
+    const out = decodeEvent({
+      v: "happi/1.9", id: "r1", type: "reasoning_step", ts: 0, depth: 3,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.type).toBe("reasoning_step");
+    // Whatever it carried survives, so a caller that DOES understand the new
+    // type can still read it.
+    expect((out as unknown as Record<string, unknown>).depth).toBe(3);
+  });
+
+  it("still reports whether a decoded type is one this build knows", () => {
+    const known = decodeEvent({ v: HAPPI_VERSION, id: "r1", type: "started", ts: 0 });
+    const novel = decodeEvent({ v: HAPPI_VERSION, id: "r1", type: "reasoning_step", ts: 0 });
+    expect(isKnownEventType(known!)).toBe(true);
+    expect(isKnownEventType(novel!)).toBe(false);
+  });
+
+  it("still rejects an event with no type at all", () => {
+    // Tolerating unknown TYPES must not become tolerating malformed events.
+    expect(decodeEvent({ v: HAPPI_VERSION, id: "r1", ts: 0 })).toBeNull();
+    expect(decodeEvent({ v: HAPPI_VERSION, id: "r1", type: "", ts: 0 })).toBeNull();
   });
 
   it("rejects non-finite ts", () => {
@@ -154,7 +188,7 @@ describe("events / decodeEvent", () => {
   });
 });
 
-describe("events / parseEvents (streaming)", () => {
+describe("events / parseEvents: basic streaming", () => {
   it("parses a 3-line NDJSON stream into 3 typed events", async () => {
     const ndjson =
       `{"v":"happi/1.0","id":"r1","type":"started","ts":0}\n` +
@@ -162,27 +196,25 @@ describe("events / parseEvents (streaming)", () => {
       `{"v":"happi/1.0","id":"r1","type":"completed","ts":2}\n`;
     const events = await collect(streamFromString(ndjson));
     expect(events.length).toBe(3);
-    expect(events[0]?.type).toBe("started");
-    expect(events[1]?.type).toBe("delta");
-    expect(events[2]?.type).toBe("completed");
+    expect(events.map((e) => e.type)).toEqual(["started", "delta", "completed"]);
     if (events[1]?.type === "delta") expect(events[1].text).toBe("hi");
   });
+});
 
+describe("events / parseEvents: resilience", () => {
   it("ignores blank lines", async () => {
     const ndjson =
       `{"v":"happi/1.0","id":"r1","type":"started","ts":0}\n` +
       `\n\n` +
       `{"v":"happi/1.0","id":"r1","type":"completed","ts":1}\n`;
-    const events = await collect(streamFromString(ndjson));
-    expect(events.length).toBe(2);
+    expect((await collect(streamFromString(ndjson))).length).toBe(2);
   });
 
   it("handles a final line without trailing newline", async () => {
     const ndjson =
       `{"v":"happi/1.0","id":"r1","type":"started","ts":0}\n` +
       `{"v":"happi/1.0","id":"r1","type":"completed","ts":1}`;
-    const events = await collect(streamFromString(ndjson));
-    expect(events.length).toBe(2);
+    expect((await collect(streamFromString(ndjson))).length).toBe(2);
   });
 
   it("ignores malformed JSON instead of throwing", async () => {
@@ -191,11 +223,11 @@ describe("events / parseEvents (streaming)", () => {
       `not-json\n` +
       `{"v":"happi/1.0","id":"r1","type":"completed","ts":1}\n`;
     const events = await collect(streamFromString(ndjson));
-    expect(events.length).toBe(2);
-    expect(events[0]?.type).toBe("started");
-    expect(events[1]?.type).toBe("completed");
+    expect(events.map((e) => e.type)).toEqual(["started", "completed"]);
   });
+});
 
+describe("events / parseEvents: chunked reassembly", () => {
   it("preserves event ordering across chunked stream", async () => {
     // Simulate a stream that arrives in arbitrary chunks, including
     // chunks that split a JSON line in half. Parser must reassemble.
@@ -217,7 +249,8 @@ describe("events / parseEvents (streaming)", () => {
       },
     });
     const events = await collect(stream);
-    expect(events.length).toBe(4);
-    expect(events.map((e) => e.type)).toEqual(["started", "delta", "delta", "completed"]);
+    expect(events.map((e) => e.type)).toEqual([
+      "started", "delta", "delta", "completed",
+    ]);
   });
 });
