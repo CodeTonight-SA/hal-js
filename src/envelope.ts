@@ -1,9 +1,10 @@
 /**
- * HAPPI/1.0 envelope — the wire-level contract.
+ * HAPPI/1.3 envelope — the wire-level contract.
  *
- * Reference: /Users/lauriescheepers/.hal/happi.md (canonical) §envelope-schema.
+ * Reference: happi.md §envelope-schema — published at
+ * https://gist.github.com/LaurieScheepers/2483d5c218c21ecc931130bcee7dee83
  *
- *   {"v":"happi/1.0","id":"<opaque>","cmd":"<dot.path>","args":[],"flags":{},"auth":{}}
+ *   {"v":"happi/1.3","id":"<opaque>","cmd":"<dot.path>","args":[],"flags":{},"auth":{}}
  *
  * Forward-compatible: unknown fields are forwarded unchanged. We intentionally
  * keep `[k: string]: unknown` so that future protocol fields don't break
@@ -11,12 +12,36 @@
  * parsing and the OpenAPI `additionalProperties: true` declaration.
  */
 
-export const HAPPI_VERSION = "happi/1.0" as const;
-
-export type HappiVersion = typeof HAPPI_VERSION;
+/** Protocol version this library stamps on envelopes it builds. */
+export const HAPPI_VERSION = "happi/1.3" as const;
 
 /**
- * The HAPPI/1.0 envelope. `v`, `id`, `cmd` are required by the spec. The
+ * Every protocol version accepted on the wire.
+ *
+ * A runtime stamps events with its OWN version, never the envelope's, so a
+ * v1.0 request to a v1.3 runtime returns v1.3 events. Checking for exact
+ * equality against a single constant therefore only ever works against one
+ * runtime build — accepting the supported range is what makes the client
+ * interoperable. Versions outside the range are still rejected.
+ */
+export const ACCEPTED_VERSIONS = [
+  "happi/1.0",
+  "happi/1.1",
+  "happi/1.2",
+  "happi/1.3",
+] as const;
+
+export type HappiVersion = (typeof ACCEPTED_VERSIONS)[number];
+
+const ACCEPTED_VERSION_SET: ReadonlySet<string> = new Set(ACCEPTED_VERSIONS);
+
+/** True iff `value` is a protocol version this library accepts. */
+export function isAcceptedVersion(value: unknown): value is HappiVersion {
+  return typeof value === "string" && ACCEPTED_VERSION_SET.has(value);
+}
+
+/**
+ * The HAPPI envelope. `v`, `id`, `cmd` are required by the spec. The
  * remaining fields are optional and opaque-pass-through.
  */
 export interface Envelope {
@@ -48,8 +73,12 @@ export function decode(value: unknown): Envelope | EnvelopeError {
     return { error: "envelope must be a JSON object" };
   }
   const v = value as Record<string, unknown>;
-  if (v.v !== HAPPI_VERSION) {
-    return { error: `unsupported version: ${JSON.stringify(v.v)}` };
+  if (!isAcceptedVersion(v.v)) {
+    return {
+      error:
+        `unsupported version: ${JSON.stringify(v.v)} ` +
+        `(accepted: ${ACCEPTED_VERSIONS.join(", ")})`,
+    };
   }
   if (typeof v.id !== "string" || v.id.length === 0) {
     return { error: "missing or invalid 'id' (must be non-empty string)" };
@@ -84,8 +113,20 @@ export function isEnvelope(value: unknown): value is Envelope {
  *
  *   makeEnvelope({ id: "r1", cmd: "version" })
  */
-export function makeEnvelope(
-  fields: Omit<Envelope, "v"> & Partial<Pick<Envelope, "v">>,
-): Envelope {
-  return { v: HAPPI_VERSION, ...fields };
+export interface MakeEnvelopeFields {
+  readonly id: string;
+  readonly cmd: string;
+  /** Override the emitted version. Defaults to HAPPI_VERSION. */
+  readonly v?: HappiVersion;
+  readonly args?: ReadonlyArray<unknown>;
+  readonly flags?: Readonly<Record<string, unknown>>;
+  readonly auth?: Readonly<Record<string, unknown>>;
+  readonly [k: string]: unknown;
+}
+
+export function makeEnvelope(fields: MakeEnvelopeFields): Envelope {
+  // Spelled out rather than derived via Omit<Envelope, "v">: because Envelope
+  // carries an index signature, Omit absorbs `id`/`cmd` into it and they stop
+  // being required — which then fails to satisfy Envelope on return.
+  return { ...fields, v: fields.v ?? HAPPI_VERSION };
 }

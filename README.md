@@ -1,23 +1,66 @@
 # hal-js
 
-HAPPI/1.0 client library for JavaScript and TypeScript. Zero-dependency core. Runs natively under Node 20+, Deno, and Bun.
+HAPPI/1.3 client library for JavaScript and TypeScript. Zero-dependency core. Runs natively under Node 20+, Deno, and Bun.
 
-> **AI is a syscall.** Every call to a model is an envelope through stdin and a stream of seven canonical events back through stdout. `hal-js` is the JS idiom that talks to any HAPPI/1.0 runtime — the canonical bash one, the Python reference, or any future implementation — without locking you to a specific provider, transport, or runtime.
+> **AI is a syscall.** Every call to a model is an envelope through stdin and a stream of canonical events back through stdout. `hal-js` is the JS idiom that talks to any HAPPI runtime — the canonical bash one, the Python reference, or any future implementation — without locking you to a specific provider, transport, or runtime.
 
 ## Why HAPPI
 
 A HAPPI request is a single JSON envelope:
 
 ```json
-{"v":"happi/1.0","id":"r1","cmd":"version"}
+{"v":"happi/1.3","id":"r1","cmd":"version"}
 ```
 
-A HAPPI response is a sequence of NDJSON events drawn from exactly seven types:
-`started`, `delta`, `tool_call`, `tool_result`, `sub_request`, `completed`, `error`.
+A HAPPI response is a sequence of NDJSON events drawn from seven streaming types:
+`started`, `delta`, `tool_call`, `tool_result`, `sub_request`, `completed`, `error` —
+plus two non-streaming records added in v1.1, `idr` and `context`, which follow
+the outcome event.
 
 Whatever the model does, it does so through this contract. Provider lock-in becomes a deployment concern, not an architecture one.
 
-Reference: `~/.hal/happi.md` (the canonical, polyglot, self-hosting runtime).
+## Protocol versions
+
+`hal-js` **emits** `happi/1.3` and **accepts** `happi/1.0` through `happi/1.3`.
+
+A runtime always stamps events with *its own* version, never the envelope's. So a
+`happi/1.0` request sent to a `happi/1.3` runtime comes back as `happi/1.3`
+events — meaning a client that checks for exact version equality can only ever
+talk to one runtime build. Accepting the whole supported range is what makes the
+client interoperable; versions outside it are still rejected.
+
+Reference: the canonical polyglot runtime, published at
+<https://gist.github.com/LaurieScheepers/2483d5c218c21ecc931130bcee7dee83>.
+
+## Citation provenance (v1.3)
+
+`cite.verify` checks that every cited quote is verbatim-present in its source. The
+check is a deterministic string match, so a fabricated quote can never earn
+`verified` — it resolves to `not_found`.
+
+```ts
+import { makeCiteVerify, decodeProvenance, notFound } from "hal-js/cite";
+import { dispatchToArray } from "hal-js/client";
+
+const env = makeCiteVerify({
+  id: "cv-1",
+  sources: [{ id: "s1", text: "The Act bars the claim after six years." }],
+  citations: [
+    { id: "c1", source_id: "s1", quote: "bars the claim after six years" },   // real
+    { id: "c2", source_id: "s1", quote: "bars the claim after three years" }, // invented
+  ],
+});
+
+const events = await dispatchToArray(env, { cmd: ["bash", "happi.md", "run"] });
+const record = decodeProvenance(events.find((e) => e.type === "completed")?.usage);
+
+console.log(record?.grounding_rate);            // 0.5
+console.log(notFound(record!).map((c) => c.id)); // ['c2']
+```
+
+Pass `strict: true` to make the runtime exit non-zero on any unverified citation —
+a build gate. Note what this proves: the quote really is in the *supplied* source.
+It does **not** prove the source is authentic, nor that the quote supports the claim.
 
 ## Install
 
@@ -94,11 +137,21 @@ npm test           # vitest
 npm run typecheck  # tsc --noEmit
 ```
 
-The `tests/conformance.test.ts` suite spawns the canonical bash runtime at `~/.hal/happi.md` and verifies byte-identical event streams. It auto-skips if the runtime is not present (e.g. CI without HAL).
+The `tests/conformance.test.ts` suite spawns a real bash runtime and verifies
+byte-identical event streams. It resolves the runtime from `$HAPPI_MD`, then
+`~/.hal/happi.md`, and auto-skips when none is reachable. Fetch the published
+reference to run conformance anywhere:
+
+```bash
+curl -fsSL "https://gist.githubusercontent.com/LaurieScheepers/2483d5c218c21ecc931130bcee7dee83/raw/happi.md" -o /tmp/happi.md
+HAPPI_MD=/tmp/happi.md npm test
+```
 
 ## Versioning
 
-`v0.1.x` is the initial release. The protocol is stable at `happi/1.0`; the JS API surface may evolve until `v1.0.0`. Forward compatibility on the wire is unconditional — unknown envelope and event fields are forwarded unchanged.
+`v0.2.x` tracks `happi/1.3`; the JS API surface may evolve until `v1.0.0`.
+Forward compatibility on the wire is unconditional — unknown envelope and event
+fields are forwarded unchanged.
 
 ## Licence
 
