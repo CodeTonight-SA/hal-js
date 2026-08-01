@@ -21,13 +21,17 @@ Whatever the model does, it does so through this contract. Provider lock-in beco
 
 ## Protocol versions
 
-`hal-js` **emits** `happi/1.3` and **accepts** `happi/1.0` through `happi/1.3`.
+`hal-js` **emits** `happi/1.3` and **accepts any** `happi/1.x` (any minor, same
+major).
 
 A runtime always stamps events with *its own* version, never the envelope's. So a
 `happi/1.0` request sent to a `happi/1.3` runtime comes back as `happi/1.3`
 events — meaning a client that checks for exact version equality can only ever
-talk to one runtime build. Accepting the whole supported range is what makes the
-client interoperable; versions outside it are still rejected.
+talk to one runtime build. HAPPI's compatibility promise is per MAJOR version —
+within v1, changes are additive — so acceptance is a major-version rule, not a
+hardcoded list: a hardcoded list only defers the same bug to the day a runtime
+ships `happi/1.4`. A different major (`happi/0.9`, `happi/2.0`) is still
+rejected, as is a malformed version string.
 
 Reference: the canonical polyglot runtime, published at
 <https://gist.github.com/LaurieScheepers/2483d5c218c21ecc931130bcee7dee83>.

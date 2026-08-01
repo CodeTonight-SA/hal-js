@@ -16,28 +16,41 @@
 export const HAPPI_VERSION = "happi/1.3" as const;
 
 /**
- * Every protocol version accepted on the wire.
- *
- * A runtime stamps events with its OWN version, never the envelope's, so a
- * v1.0 request to a v1.3 runtime returns v1.3 events. Checking for exact
- * equality against a single constant therefore only ever works against one
- * runtime build — accepting the supported range is what makes the client
- * interoperable. Versions outside the range are still rejected.
+ * Versions this build has been explicitly tested against. Informational
+ * only — see `isAcceptedVersion` for the actual acceptance rule. Do NOT use
+ * this to gate acceptance: a hardcoded list only defers the break to the day
+ * a runtime ships the next minor.
  */
-export const ACCEPTED_VERSIONS = [
+export const KNOWN_VERSIONS = [
   "happi/1.0",
   "happi/1.1",
   "happi/1.2",
   "happi/1.3",
 ] as const;
 
-export type HappiVersion = (typeof ACCEPTED_VERSIONS)[number];
+/**
+ * Any well-formed `happi/1.<minor>` version string, for any minor.
+ *
+ * A runtime stamps events with its OWN version, never the envelope's, so a
+ * v1.0 request to a v1.3 runtime returns v1.3 events — checking for exact
+ * equality against a single constant therefore only ever works against one
+ * runtime build. HAPPI's compatibility promise is per MAJOR version: within
+ * v1, changes are additive, so acceptance must not depend on a version being
+ * listed — that only defers the same bug to the day a runtime ships
+ * happi/1.4 and every client rejects it again for no reason. A different
+ * major (happi/0.9, happi/2.0) is still rejected.
+ */
+export type HappiVersion = `happi/1.${number}`;
 
-const ACCEPTED_VERSION_SET: ReadonlySet<string> = new Set(ACCEPTED_VERSIONS);
+const HAPPI_V1_RE = /^happi\/1\.\d+$/;
 
-/** True iff `value` is a protocol version this library accepts. */
+/**
+ * True iff `value` is a well-formed happi/1.x version string, for any minor.
+ * Rejects a different major and malformed strings (`happi/1`, `happi/x.y`,
+ * a bare `1.3`, empty).
+ */
 export function isAcceptedVersion(value: unknown): value is HappiVersion {
-  return typeof value === "string" && ACCEPTED_VERSION_SET.has(value);
+  return typeof value === "string" && HAPPI_V1_RE.test(value);
 }
 
 /**
@@ -77,7 +90,7 @@ export function decode(value: unknown): Envelope | EnvelopeError {
     return {
       error:
         `unsupported version: ${JSON.stringify(v.v)} ` +
-        `(accepted: ${ACCEPTED_VERSIONS.join(", ")})`,
+        `(accepted: any happi/1.x)`,
     };
   }
   if (typeof v.id !== "string" || v.id.length === 0) {

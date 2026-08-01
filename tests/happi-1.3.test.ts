@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from "vitest";
 import {
-  ACCEPTED_VERSIONS,
+  KNOWN_VERSIONS,
   HAPPI_VERSION,
   decode,
   isAcceptedVersion,
@@ -38,7 +38,18 @@ import { referenceRuntimeCmd } from "./_runtime.js";
 /* ── fixtures ───────────────────────────────────────────────────────────── */
 
 const ALL_VERSIONS = ["happi/1.0", "happi/1.1", "happi/1.2", "happi/1.3"];
-const BAD_VERSIONS = ["happi/0.9", "happi/2.0", "happi/1.4", "", "1.3"];
+// No runtime has shipped these yet. Still accepted: HAPPI's compatibility
+// promise is per MAJOR version, so a client must not reject a future minor.
+const FUTURE_MINOR_VERSIONS = ["happi/1.4", "happi/1.99"];
+const BAD_VERSIONS = [
+  "happi/0.9",
+  "happi/2.0",
+  "happi/1",
+  "happi/1.",
+  "happi/x.y",
+  "",
+  "1.3",
+];
 
 const IDR_RAW = {
   v: "happi/1.3",
@@ -91,10 +102,12 @@ describe("version constants", () => {
     expect(HAPPI_VERSION).toBe("happi/1.3");
   });
 
-  it("accepts happi/1.0 through happi/1.3", () => {
-    // Named explicitly so a mutation narrowing the tuple fails rather than
-    // trivially agreeing with itself.
-    expect([...ACCEPTED_VERSIONS]).toEqual(ALL_VERSIONS);
+  it("lists the versions this build has been tested against", () => {
+    // KNOWN_VERSIONS is informational only — it does not gate acceptance
+    // (see "accepting any happi/1.x minor" below). Named explicitly so a
+    // mutation narrowing the tuple fails rather than trivially agreeing
+    // with itself.
+    expect([...KNOWN_VERSIONS]).toEqual(ALL_VERSIONS);
   });
 });
 
@@ -121,6 +134,16 @@ describe("parsing a 1.3 runtime stream", () => {
     expect(parsed.every((e) => e !== null)).toBe(true);
     expect(parsed.map((e) => e?.type)).toEqual(["started", "delta", "completed"]);
   });
+});
+
+describe("accepting any happi/1.x minor (per-major compatibility)", () => {
+  it.each(FUTURE_MINOR_VERSIONS)(
+    "accepts %s even though no runtime has shipped it yet",
+    (v) => {
+      expect(isAcceptedVersion(v)).toBe(true);
+      expect("error" in decode({ v, id: "r", cmd: "version" })).toBe(false);
+    },
+  );
 });
 
 describe("rejecting out-of-range versions", () => {

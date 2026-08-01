@@ -15,7 +15,7 @@
 
 import { describe, it, expect } from "vitest";
 import { dispatchToArray } from "../src/client.js";
-import { makeEnvelope, ACCEPTED_VERSIONS } from "../src/envelope.js";
+import { makeEnvelope, isAcceptedVersion } from "../src/envelope.js";
 import { referenceRuntimeCmd } from "./_runtime.js";
 
 const RUNTIME = referenceRuntimeCmd();
@@ -29,14 +29,14 @@ describeIfHappi("conformance: version", () => {
     expect(events.length).toBe(3);
 
     expect(events[0]?.type).toBe("started");
-    // The runtime stamps its OWN version; assert it is one we accept rather
+    // The runtime stamps its OWN version; assert it is well-formed rather
     // than pinning to the single version this build happens to emit.
-    expect(ACCEPTED_VERSIONS).toContain(events[0]?.v);
+    expect(isAcceptedVersion(events[0]?.v)).toBe(true);
     expect(events[0]?.id).toBe("conf-version");
 
     expect(events[1]?.type).toBe("delta");
     if (events[1]?.type === "delta") {
-      expect(ACCEPTED_VERSIONS).toContain(events[1].text);
+      expect(isAcceptedVersion(events[1].text)).toBe(true);
       expect(events[1].text).toBe(events[1].v);
     }
 
@@ -54,7 +54,7 @@ describeIfHappi("conformance: version", () => {
       "delta",
       "completed",
     ]);
-    expect(ACCEPTED_VERSIONS).toContain(events[0]?.v);
+    expect(isAcceptedVersion(events[0]?.v)).toBe(true);
   });
 });
 
