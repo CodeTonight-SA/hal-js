@@ -159,4 +159,10 @@ fields are forwarded unchanged.
 
 ## Licence
 
-MIT. See `LICENSE`.
+AGPL-3.0-only. See `LICENSE`.
+
+Copyright (C) 2024-2026 Lourens Cornelius Scheepers / CodeTonight (Pty) Ltd
+
+Under the AGPL, running a modified version of this software as a network
+service counts as distribution: users interacting with it over a network are
+entitled to the corresponding source.
