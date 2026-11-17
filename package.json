@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "description": "HAPPI/1.3 JavaScript/TypeScript client library \u2014 AI as a syscall. Zero-dep core, runs under Node/Deno/Bun.",
   "license": "Apache-2.0",
-  "author": "CodeTonight (Pty) Ltd t/a ENTER Konsult",
+  "author": "CodeTonight (Pty) Ltd",
   "homepage": "https://github.com/CodeTonight-SA/hal-js",
   "repository": {
     "type": "git",
