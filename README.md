@@ -159,13 +159,10 @@ fields are forwarded unchanged.
 
 ## Licence
 
-AGPL-3.0-only. See `LICENSE`.
+Apache-2.0. See [LICENSE](LICENSE).
 
 Copyright (C) 2024-2026 Lourens Cornelius Scheepers / CodeTonight (Pty) Ltd
 
-Under the AGPL, running a modified version of this software as a network
-service counts as distribution: users interacting with it over a network are
-entitled to the corresponding source.
-
-**Commercial licences.** If the AGPL's network-use obligation does not fit your
-deployment, a commercial licence is available — contact licensing@codetonight.co.za.
+You may use, modify and redistribute this library in any project, open or
+closed source, under the Apache License, version 2.0, which includes an
+express patent grant. Earlier releases were published under AGPL-3.0-only.
